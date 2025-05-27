@@ -1,4 +1,6 @@
 import streamlit as st
+st.set_page_config(page_title="Hand Sign Translator Dashboard", layout="wide")
+
 import cv2
 import numpy as np
 import tensorflow as tf
@@ -11,37 +13,38 @@ def load_model():
     model = tf.keras.models.load_model("hand_sign_model.h5")
     with open("labels.json", "r") as f:
         label_map = json.load(f)
-    reverse_label_map = {v: k for k, v in label_map.items()}  # keys are ints here
+    reverse_label_map = {v: k for k, v in label_map.items()}  # keys are ints
     return model, reverse_label_map
 
 model, reverse_label_map = load_model()
 
-st.title("🤖 Hand Sign Translator")
+st.title("🤖 Hand Sign Translator Dashboard")
 
-# Create start and stop buttons, control a session state flag
+# Sidebar Controls
+st.sidebar.header("⚙️ Controls")
 if 'running' not in st.session_state:
     st.session_state.running = False
 
-def start_translation():
-    st.session_state.running = True
+confidence_threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.5, 0.01)
 
-def stop_translation():
+if st.sidebar.button("▶️ Start Translation"):
+    st.session_state.running = True
+if st.sidebar.button("⏹️ Stop Translation"):
     st.session_state.running = False
 
-col1, col2 = st.columns(2)
-with col1:
-    st.button("▶️ Start Translation", on_click=start_translation)
-with col2:
-    st.button("⏹️ Stop Translation", on_click=stop_translation)
+st.sidebar.markdown("---")
+st.sidebar.markdown("[🎥 Example Video](https://example.com/example.mp4)")
 
-FRAME_WINDOW = st.image([])
-prediction_text_placeholder = st.empty()
+# Layout
+col1, col2 = st.columns([2, 1])
+FRAME_WINDOW = col1.image([])
+prediction_text_placeholder = col2.empty()
 
+# Initialize
+cap = cv2.VideoCapture(0)
 detector = HandDetector(maxHands=1)
 offset = 20
 img_size = 300
-
-cap = cv2.VideoCapture(0)
 
 while st.session_state.running:
     success, img = cap.read()
@@ -82,9 +85,13 @@ while st.session_state.running:
         img_input = np.expand_dims(img_input, axis=0)
         prediction = model.predict(img_input)
         class_index = np.argmax(prediction)
-        class_name = reverse_label_map[class_index]  # <-- Fixed here
+        confidence = float(prediction[0][class_index])
 
-        prediction_text = f"Prediction: **{class_name}**"
+        if confidence >= confidence_threshold:
+            class_name = reverse_label_map[class_index]
+            prediction_text = f"Prediction: **{class_name}**\nConfidence: **{confidence:.2f}**"
+        else:
+            prediction_text = f"Prediction: **Uncertain**\nConfidence: **{confidence:.2f}** (below threshold)"
 
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     FRAME_WINDOW.image(img_rgb)
