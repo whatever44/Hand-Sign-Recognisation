@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 import json
 from cvzone.HandTrackingModule import HandDetector
+import time
 
 # Load model and labels
 @st.cache_resource
@@ -13,7 +14,7 @@ def load_model():
     model = tf.keras.models.load_model("hand_sign_model.h5")
     with open("labels.json", "r") as f:
         label_map = json.load(f)
-    reverse_label_map = {v: k for k, v in label_map.items()}
+    reverse_label_map = {v: k for k, v in label_map.items()}  # keys are ints
     return model, reverse_label_map
 
 model, reverse_label_map = load_model()
@@ -29,23 +30,31 @@ confidence_threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.5, 
 
 if st.sidebar.button("▶️ Start Translation"):
     st.session_state.running = True
+    # Reset confidence list on start
+    st.session_state.confidence_history = []
 if st.sidebar.button("⏹️ Stop Translation"):
     st.session_state.running = False
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("[🎥 Example Video](202505261654.mp4)")
-
+# Replace with your local video link in markdown
+st.sidebar.video("202505261654.mp4")
 
 # Layout
 col1, col2 = st.columns([2, 1])
 FRAME_WINDOW = col1.image([])
 prediction_text_placeholder = col2.empty()
 
-# Initialize
+# Add chart placeholder in sidebar or main page
+chart_placeholder = st.sidebar.empty()
+
+# Initialize webcam and detector
 cap = cv2.VideoCapture(0)
-detector = HandDetector(maxHands=2)
+detector = HandDetector(maxHands=1)
 offset = 20
 img_size = 300
+
+if 'confidence_history' not in st.session_state:
+    st.session_state.confidence_history = []
 
 while st.session_state.running:
     success, img = cap.read()
@@ -55,6 +64,7 @@ while st.session_state.running:
 
     hands, img = detector.findHands(img)
     prediction_text = "Waiting for hand..."
+    confidence = 0.0  # default confidence for this frame
 
     if hands:
         hand = hands[0]
@@ -108,8 +118,20 @@ while st.session_state.running:
         else:
             prediction_text = f"Prediction: **Uncertain**\nConfidence: **{confidence:.2f}** (below threshold)"
 
+
+    # Append confidence to history and keep last 100 values
+    st.session_state.confidence_history.append(confidence)
+    if len(st.session_state.confidence_history) > 100:
+        st.session_state.confidence_history.pop(0)
+
+    # Update the chart with confidence history
+    chart_placeholder.line_chart(st.session_state.confidence_history)
+
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     FRAME_WINDOW.image(img_rgb)
     prediction_text_placeholder.markdown(prediction_text)
+
+    # Small delay to control frame rate
+    time.sleep(0.03)
 
 cap.release()
